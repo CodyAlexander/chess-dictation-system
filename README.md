@@ -10,6 +10,6 @@ Provide the ability for a user to dictate notation to move pieces in chess appli
 * Load the FEN into an internal chess game
   * python-chess library
 * Push-to-talk, listen for dictated chess notation
-  * SpeechRecognition library using PocketSphinx
+  * SpeechRecognition library using Google Cloud Speech API
 * Execute move on screen
   * Pyautogui library
