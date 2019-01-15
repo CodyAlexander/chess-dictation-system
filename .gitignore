@@ -2,4 +2,4 @@
 .git/
 
 ## Hide the GCP authentication key
-.json
+*.json
