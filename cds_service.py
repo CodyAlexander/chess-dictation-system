@@ -7,7 +7,7 @@ chess boards.
 
 Changelog:
     2019-01-12 Cody Alexander - Created
-
+    2019-01-15 Cody Alexander - Now using Google Cloud Speech API
 """
 
 from __future__ import absolute_import
@@ -28,7 +28,95 @@ import tensorflow_chessbot
 import chessboard_finder
 from helper_functions import shortenFEN
 
-
+LOG_LEVEL = logging.DEBUG
+GCP_SPEECH_LANGUAGE = "en-US"
+SPEECH_API_PHRASES = [
+        "black",
+        "white",
+        "pawn",
+        "bishop",
+        "knight",
+        "rook",
+        "queen",
+        "king",
+        "takes",
+        "take",
+        "captures",
+        "capture",
+        "alpha",
+        "bravo",
+        "charlie",
+        "delta",
+        "echo",
+        "golf",
+        "hotel",
+        "a1",
+        "a2",
+        "a3",
+        "a4",
+        "a5",
+        "a6",
+        "a7",
+        "a8",
+        "b1",
+        "b2",
+        "b3",
+        "b4",
+        "b5",
+        "b6",
+        "b7",
+        "b8",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "d6",
+        "d7",
+        "d8",
+		"e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5",
+        "e6",
+        "e7",
+        "e8",
+        "f1",
+        "f2",
+        "f3",
+        "f4",
+        "f5",
+        "f6",
+        "f7",
+        "f8",
+        "g1",
+        "g2",
+        "g3",
+        "g4",
+        "g5",
+        "g6",
+        "g7",
+        "g8",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "h7",
+        "h8",
+        "quit",
+        "exit"
+        ]
 FILE_MULTIPLIER = {
         'a': 0,
         'b': 1,
@@ -39,7 +127,6 @@ FILE_MULTIPLIER = {
         'g': 6,
         'h': 7
         }
-
 RANK_MULTIPLIER = {
         '1': 0,
         '2': 1,
@@ -50,7 +137,6 @@ RANK_MULTIPLIER = {
         '7': 6,
         '8': 7
         }
-
 
 class CDSService(object):
     """
@@ -65,7 +151,7 @@ class CDSService(object):
         logging.basicConfig(format='%(asctime)s %(message)s', 
                     datefmt='%m/%d/%Y %I:%M:%S %p')
         self.logger = logging.getLogger('CDSService')
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(LOG_LEVEL)
         
         ## Chess logic
         self.chess_board = chess.Board()
@@ -78,7 +164,7 @@ class CDSService(object):
         ## Speech recognition
         self.recognizer = sr.Recognizer()
         with sr.Microphone() as source:
-            self.logger.info('Be quiet... adjusting for ambient microphone noise (5s)...')
+            self.logger.info('Be quiet please... adjusting for ambient microphone noise (5s)...')
             self.recognizer.adjust_for_ambient_noise(source, duration=5)
             self.logger.info('Adjustment complete.')       
             
@@ -92,45 +178,45 @@ class CDSService(object):
         """
         window = tkinter.Tk()
         
-        tkinter.Label(window, text="Command").grid(row=0)
+        tkinter.Label(window, text="== CHESS DICTATION SYSTEM ==").grid(row=0)
         
-        command_input = tkinter.Entry(window)
-        command_input.grid(row=0, column=1)
+        tkinter.Label(window, text="Speech:").grid(row=1, column=0)
+        self.speech_label = tkinter.StringVar(value="Press M to talk.")
+        tkinter.Label(window, textvariable=self.speech_label).grid(row=1, column=1)
         
-        def color_button():
-            self.chess_board.turn = chess.BLACK
+        tkinter.Label(window, text="Status:").grid(row=2, column=0)
+        self.status_label = tkinter.StringVar(value="Started.")
+        tkinter.Label(window, textvariable=self.status_label).grid(row=2, column=1)
             
-        def submit_button():
-            self.try_san_move(command_input.get())
-            
-        def mic_button():
-            self.get_move_from_speech()
-            
-        def key_up(key):
-            print("key_up: " + str(key))
-            
-        def key_down(key):
-            print("key_down: " + str(key))
+        def key_up(keypress):
+            self.logger.debug("key_up: " + keypress.char)
+            if(keypress.char == "m"):
+                self.get_command_from_speech()
             
         def polling_task():
-            # Poll the screen for chessboard every second
             self.set_board_from_screen()
-            self.set_turn_from_screen()
             window.after(1000, polling_task)
-            
-        tkinter.Button(window, text='Black Move', command=color_button).grid(row=3, 
-                      column=0, sticky=tkinter.W, pady=4)
-        tkinter.Button(window, text='Submit', command=submit_button).grid(row=3, 
-                      column=1, sticky=tkinter.W, pady=4)
-        tkinter.Button(window, text='Mic', command=mic_button).grid(row=3, 
-                      column=2, sticky=tkinter.W, pady=4)
         
-        window.bind("<KeyPress>", key_down)
         window.bind("<KeyRelease>", key_up)
         window.lift()
         window.attributes("-topmost", True)
         window.after(0, polling_task)
         return window
+    
+    def _set_speech_label(self, message):
+        """
+        Displays a new string in the speech output in the GUI
+        """
+        self.speech_label.set(message)
+        self.logger.info("Speech box change: " + message)
+        
+        
+    def _set_status_label(self, message):
+        """
+        Displays a new string in the status output in the GUI
+        """
+        self.status_label.set(message)
+        self.logger.info("Status box change: " + message)
     
     
     def _automate_move(self, starting_coord, ending_coord):
@@ -139,6 +225,7 @@ class CDSService(object):
         """
         pyautogui.moveTo(starting_coord[0], starting_coord[1], duration=0.01)
         pyautogui.dragTo(ending_coord[0], ending_coord[1], duration=0.25)
+        self.window.focus_force()
     
     
     def _square_to_coord(self, square):
@@ -190,13 +277,6 @@ class CDSService(object):
         else:
             self.logger.info('FAIL No tiles detected.')
         self.logger.debug('END set_board_from_screen')
-        
-        
-    def set_turn_from_screen(self):
-        """
-        Set the colour pieces that have next turn if found on the screen.
-        """
-        return True
     
     
     def try_san_move(self, move_string):
@@ -208,30 +288,112 @@ class CDSService(object):
             move = self.chess_board.parse_san(move_string)
             if(move in self.chess_board.legal_moves):
                 self.logger.info("This move is legal")
+                self._set_status_label("Moving " + chess.SQUARE_NAMES[move.from_square] +
+                                   " to " + chess.SQUARE_NAMES[move.to_square])
                 starting_coord = self._square_to_coord(chess.SQUARE_NAMES[move.from_square])
                 ending_coord = self._square_to_coord(chess.SQUARE_NAMES[move.to_square])
                 self._automate_move(starting_coord, ending_coord)
             else:
-                self.logger.warning("This move is not legal")
+                self._set_status_label("Illegal move " + move_string)
+                self.logger.warning("Illegal move " + move_string)
         except ValueError:
-            self.logger.warning("Invalid move")
+            self._set_status_label("Invalid move " + move_string)
+            self.logger.warning("Invalid move " + move_string)
+        self.logger.debug('END try_san_move')
         
-        self.logger.debug('START try_san_move')
-        
-        
-    def get_move_from_speech(self):
+
+    def get_command_from_speech(self):
         """
         Listen to the microphone and get a SAN move from speech.
         """
         with sr.Microphone() as source: 
-            audio = self.recognizer.listen(source)
+            self._set_speech_label("Listening... speak now!")
+            audio = self.recognizer.listen(source, timeout=2, phrase_time_limit=2)
         try:
-            print("Sphinx thinks you said '" + 
-                  self.recognizer.recognize_sphinx(audio) + "'")  
+            speech_string = self.recognizer.recognize_google_cloud(
+                    audio_data=audio,
+                    credentials_json=None,
+                    language=GCP_SPEECH_LANGUAGE,
+                    preferred_phrases=SPEECH_API_PHRASES,
+                    show_all=False)
+            self._set_speech_label("Google heard '" + speech_string + "'")
+            speech_command = self.parse_speech_command(speech_string)
+            self.logger.info("Translated to command: '" + speech_command + "'")
+            if speech_command in ["quit", "exit"]:
+                self.logger.info("Closing due to voice command.")
+                self.window.destroy()
+            elif "black" in speech_command:
+                self.chess_board.turn = chess.BLACK
+                speech_command = speech_command.replace("black", "")
+                self.try_san_move(speech_command)
+            elif "white" in speech_command:
+                self.chess_board.turn = chess.WHITE
+                speech_command = speech_command.replace("white", "")
+                self.try_san_move(speech_command)
+            else:
+                self.try_san_move(speech_command)
         except sr.UnknownValueError:  
-            print("Sphinx could not understand audio")  
+            self._set_speech_label("Failed to understand audio.")
         except sr.RequestError as e:  
-            print("Sphinx error; {0}".format(e))
+            print("Google error; {0}".format(e))
+            
+            
+    def parse_speech_command(self, speech_string):
+        """
+        Parse the detected speech string into a command
+        """
+        speech_string = speech_string.lower()
+        
+        ## Change chess words to SAN notation
+        word_dict = {
+                "zero":     "0",
+                "one":      "1",
+                "two":      "2",
+                "three":    "3",
+                "four":     "4",
+                "for":      "4",
+                "five":     "5",
+                "six":      "6",
+                "seven":    "7",
+                "eight":    "8",
+                "nine":     "9",
+                "alpha":    "a",
+                "alfa":     "a",
+                "bravo":    "b",
+                "be":       "b",
+                "charlie":  "c",
+                "see":      "c",
+                "delta":    "d",
+                "echo":     "e",
+                "foxtrot":  "f",
+                "golf":     "g",
+                "call":     "g",
+                "hotel":    "h",
+                "rook":     "R",
+                "rock":     "R",
+                "truck":    "R",
+                "knight":   "N",
+                "night":    "N",
+                "bishop":   "B",
+                "ship":     "B",
+                "queen":    "Q",
+                "king":     "K",
+                " capture ":"",
+                " captures ":"",
+                " takes ":    "",
+                " take ":    "",
+                "pawn":    "",
+                " the ":      "",
+                " to ":       "",
+                "echo.for":     "e4"
+                }
+        for key, value in word_dict.items():
+            speech_string = speech_string.replace(key,value)
+        
+        ## Remove any spaces
+        speech_string = speech_string.replace(" ","")
+        
+        return speech_string
     
         
 def main():
